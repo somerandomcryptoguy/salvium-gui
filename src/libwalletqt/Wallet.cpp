@@ -57,6 +57,8 @@
 #include <QList>
 #include <QVector>
 #include <QMutexLocker>
+#include <QVariantList>
+#include <QVariantMap>
 
 #include "qt/ScopeGuard.h"
 
@@ -66,6 +68,88 @@ namespace {
     static const int WALLET_CONNECTION_STATUS_CACHE_TTL_SECONDS = 5;
 
     static constexpr char ATTRIBUTE_SUBADDRESS_ACCOUNT[] ="gui.subaddress_account";
+
+    QVariantMap salchatIdentityMap(const Monero::SalchatIdentity &identity)
+    {
+        return {
+            {"initialized", identity.initialized},
+            {"spendPublicKey", QString::fromStdString(identity.spendPublicKey)},
+            {"signingPublicKey", QString::fromStdString(identity.signingPublicKey)},
+            {"encryptionPublicKey", QString::fromStdString(identity.encryptionPublicKey)},
+            {"salviumAddress", QString::fromStdString(identity.salviumAddress)},
+            {"createdAt", QVariant::fromValue<qulonglong>(identity.createdAt)}
+        };
+    }
+
+    QVariantMap salchatContactMap(const Monero::SalchatContact &contact)
+    {
+        return {
+            {"contactId", QString::fromStdString(contact.contactId)},
+            {"label", QString::fromStdString(contact.label)},
+            {"spendPublicKey", QString::fromStdString(contact.spendPublicKey)},
+            {"signingPublicKey", QString::fromStdString(contact.signingPublicKey)},
+            {"encryptionPublicKey", QString::fromStdString(contact.encryptionPublicKey)},
+            {"salviumAddress", QString::fromStdString(contact.salviumAddress)},
+            {"blocked", contact.blocked},
+            {"createdAt", QVariant::fromValue<qulonglong>(contact.createdAt)}
+        };
+    }
+
+    QString salchatMessageTypeName(const quint8 type)
+    {
+        switch (type)
+        {
+            case 1: return QStringLiteral("text");
+            case 2: return QStringLiteral("delivery_receipt");
+            case 4: return QStringLiteral("contact_request");
+            case 5: return QStringLiteral("contact_accept");
+            default: return QStringLiteral("unknown");
+        }
+    }
+
+    QString salchatMessageDirectionName(const quint8 direction)
+    {
+        switch (direction)
+        {
+            case 1: return QStringLiteral("incoming");
+            case 2: return QStringLiteral("outgoing");
+            default: return QStringLiteral("unknown");
+        }
+    }
+
+    QString salchatMessageStateName(const quint8 state)
+    {
+        switch (state)
+        {
+            case 1: return QStringLiteral("submitted");
+            case 2: return QStringLiteral("received");
+            case 3: return QStringLiteral("quarantined");
+            case 4: return QStringLiteral("failed");
+            case 5: return QStringLiteral("delivered");
+            default: return QStringLiteral("unknown");
+        }
+    }
+
+    QVariantMap salchatMessageMap(const Monero::SalchatMessage &message)
+    {
+        return {
+            {"messageId", QString::fromStdString(message.messageId)},
+            {"contactId", QString::fromStdString(message.contactId)},
+            {"content", QString::fromStdString(message.content)},
+            {"senderSalviumAddress", QString::fromStdString(message.senderSalviumAddress)},
+            {"senderSigningPublicKey", QString::fromStdString(message.senderSigningPublicKey)},
+            {"type", static_cast<int>(message.type)},
+            {"typeName", salchatMessageTypeName(message.type)},
+            {"direction", static_cast<int>(message.direction)},
+            {"directionName", salchatMessageDirectionName(message.direction)},
+            {"state", static_cast<int>(message.state)},
+            {"stateName", salchatMessageStateName(message.state)},
+            {"createdAt", QVariant::fromValue<qulonglong>(message.createdAt)},
+            {"receivedAt", QVariant::fromValue<qulonglong>(message.receivedAt)},
+            {"expiresHeight", QVariant::fromValue<qulonglong>(message.expiresHeight)},
+            {"blocksLeft", QVariant::fromValue<qulonglong>(message.blocksLeft)}
+        };
+    }
 }
 
 Wallet::Wallet(QObject * parent)
@@ -969,6 +1053,189 @@ QString Wallet::getCacheAttribute(const QString &key) const {
 bool Wallet::setCacheAttribute(const QString &key, const QString &val)
 {
     return m_walletImpl->setCacheAttribute(key.toStdString(), val.toStdString());
+}
+
+QVariantMap Wallet::salchatGetIdentity() const
+{
+    Monero::SalchatIdentity identity;
+    const bool success = m_walletImpl->salchatGetIdentity(identity);
+    QVariantMap result = salchatIdentityMap(identity);
+    result.insert("success", success);
+    result.insert("error", success ? QString() : errorString());
+    return result;
+}
+
+QVariantMap Wallet::salchatRotateIdentity()
+{
+    Monero::SalchatIdentity identity;
+    const bool success = m_walletImpl->salchatRotateIdentity(identity);
+    QVariantMap result = salchatIdentityMap(identity);
+    result.insert("success", success);
+    result.insert("error", success ? QString() : errorString());
+    return result;
+}
+
+QVariantMap Wallet::salchatGetAddress() const
+{
+    std::string address;
+    const bool success = m_walletImpl->salchatGetAddress(address);
+    return {
+        {"success", success},
+        {"address", QString::fromStdString(address)},
+        {"error", success ? QString() : errorString()}
+    };
+}
+
+QVariantMap Wallet::salchatAddContact(const QString &label, const QString &addressOrContactId)
+{
+    Monero::SalchatContact contact;
+    uint64_t promotedMessages = 0;
+    const bool success = m_walletImpl->salchatAddContact(
+        label.toStdString(), addressOrContactId.toStdString(), contact, promotedMessages);
+    QVariantMap result = salchatContactMap(contact);
+    result.insert("success", success);
+    result.insert("promotedMessages", QVariant::fromValue<qulonglong>(promotedMessages));
+    result.insert("error", success ? QString() : errorString());
+    return result;
+}
+
+QVariantMap Wallet::salchatAcceptContact(const QString &label, const QString &messageId)
+{
+    Monero::SalchatContact contact;
+    uint64_t promotedMessages = 0;
+    const bool success = m_walletImpl->salchatAcceptContact(
+        label.toStdString(), messageId.toStdString(), contact, promotedMessages);
+    QVariantMap result = salchatContactMap(contact);
+    result.insert("success", success);
+    result.insert("promotedMessages", QVariant::fromValue<qulonglong>(promotedMessages));
+    result.insert("error", success ? QString() : errorString());
+    return result;
+}
+
+QVariantMap Wallet::salchatRemoveContact(const QString &contactId)
+{
+    const bool success = m_walletImpl->salchatRemoveContact(contactId.toStdString());
+    return {
+        {"success", success},
+        {"error", success ? QString() : errorString()}
+    };
+}
+
+QVariantMap Wallet::salchatBlockContact(const QString &contactId, bool blocked)
+{
+    const bool success = m_walletImpl->salchatBlockContact(contactId.toStdString(), blocked);
+    return {
+        {"success", success},
+        {"blocked", success ? blocked : false},
+        {"error", success ? QString() : errorString()}
+    };
+}
+
+QVariantList Wallet::salchatContacts() const
+{
+    QVariantList result;
+    const auto contacts = m_walletImpl->salchatContacts();
+    result.reserve(static_cast<int>(contacts.size()));
+    for (const auto &contact : contacts)
+        result.append(salchatContactMap(contact));
+    return result;
+}
+
+QVariantMap Wallet::salchatSendMessage(const QString &contactId, const QString &message, quint64 ttl)
+{
+    const auto sendResult = m_walletImpl->salchatSendMessage(contactId.toStdString(), message.toStdString(), ttl);
+    return {
+        {"success", sendResult.submitted},
+        {"submitted", sendResult.submitted},
+        {"messageId", QString::fromStdString(sendResult.messageId)},
+        {"reason", QString::fromStdString(sendResult.reason)},
+        {"error", sendResult.submitted ? QString() : QString::fromStdString(sendResult.reason)}
+    };
+}
+
+QVariantMap Wallet::salchatReceiveMessages(quint64 limit)
+{
+    const auto receiveResult = m_walletImpl->salchatReceiveMessages(limit);
+    const bool success = m_walletImpl->status() == Monero::Wallet::Status_Ok;
+    QVariantList newMessages;
+    newMessages.reserve(static_cast<int>(receiveResult.newMessages.size()));
+    for (const auto &message : receiveResult.newMessages)
+        newMessages.append(salchatMessageMap(message));
+    return {
+        {"success", success},
+        {"received", QVariant::fromValue<qulonglong>(receiveResult.received)},
+        {"quarantined", QVariant::fromValue<qulonglong>(receiveResult.quarantined)},
+        {"rejected", QVariant::fromValue<qulonglong>(receiveResult.rejected)},
+        {"newMessages", newMessages},
+        {"error", success ? QString() : errorString()}
+    };
+}
+
+bool Wallet::salchatSendMessageAsync(const QString &contactId, const QString &message, quint64 ttl)
+{
+    return m_scheduler.run([this, contactId, message, ttl] {
+        QMutexLocker locker(&m_asyncMutex);
+        emit salchatSendMessageFinished(salchatSendMessage(contactId, message, ttl));
+    }).first;
+}
+
+bool Wallet::salchatReceiveMessagesAsync(quint64 limit)
+{
+    return m_scheduler.run([this, limit] {
+        QMutexLocker locker(&m_asyncMutex);
+        emit salchatReceiveMessagesFinished(salchatReceiveMessages(limit));
+    }).first;
+}
+
+QVariantList Wallet::salchatMessages(const QString &contactId, quint64 limit) const
+{
+    QVariantList result;
+    const auto messages = m_walletImpl->salchatMessages(contactId.toStdString(), limit);
+    result.reserve(static_cast<int>(messages.size()));
+    for (const auto &message : messages)
+        result.append(salchatMessageMap(message));
+    return result;
+}
+
+QVariantMap Wallet::salchatGetMessage(const QString &messageId) const
+{
+    Monero::SalchatMessage message;
+    const bool success = m_walletImpl->salchatGetMessage(messageId.toStdString(), message);
+    QVariantMap result = salchatMessageMap(message);
+    result.insert("success", success);
+    result.insert("error", success ? QString() : errorString());
+    return result;
+}
+
+QVariantMap Wallet::salchatDeleteMessage(const QString &messageId)
+{
+    const bool success = m_walletImpl->salchatDeleteMessage(messageId.toStdString());
+    return {
+        {"success", success},
+        {"error", success ? QString() : errorString()}
+    };
+}
+
+QVariantMap Wallet::salchatStatus() const
+{
+    const auto status = m_walletImpl->salchatStatus();
+    return {
+        {"identityInitialized", status.identityInitialized},
+        {"daemonAvailable", status.daemonAvailable},
+        {"daemonEnabled", status.daemonEnabled},
+        {"contacts", QVariant::fromValue<qulonglong>(status.contacts)},
+        {"messages", QVariant::fromValue<qulonglong>(status.messages)},
+        {"cachedMessages", QVariant::fromValue<qulonglong>(status.cachedMessages)},
+        {"error", QString::fromStdString(status.error)}
+    };
+}
+
+bool Wallet::salchatStatusAsync()
+{
+    return m_scheduler.run([this] {
+        QMutexLocker locker(&m_asyncMutex);
+        emit salchatStatusFinished(salchatStatus());
+    }).first;
 }
 
 bool Wallet::setUserNote(const QString &txid, const QString &note)

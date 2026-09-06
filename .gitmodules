@@ -3,5 +3,5 @@
 	url = https://github.com/dlbeer/quirc/
 [submodule "salvium"]
 	path = salvium
-	url = https://github.com/salvium/salvium.git
-	branch = main
+	url = https://github.com/jgarvey955/salvium.git
+	branch = sal-chat

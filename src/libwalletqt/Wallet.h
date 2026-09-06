@@ -36,6 +36,8 @@
 #include <QMutex>
 #include <QList>
 #include <QJSValue>
+#include <QVariantList>
+#include <QVariantMap>
 #include <QtConcurrent/QtConcurrent>
 
 #include "wallet/api/wallet2_api.h" // we need to have an access to the Monero::Wallet::Status enum here;
@@ -358,6 +360,25 @@ public:
     Q_INVOKABLE bool setCacheAttribute(const QString &key, const QString &val);
     Q_INVOKABLE QString getCacheAttribute(const QString &key) const;
 
+    //! Salchat encrypted wallet messaging
+    Q_INVOKABLE QVariantMap salchatGetIdentity() const;
+    Q_INVOKABLE QVariantMap salchatRotateIdentity();
+    Q_INVOKABLE QVariantMap salchatGetAddress() const;
+    Q_INVOKABLE QVariantMap salchatAddContact(const QString &label, const QString &addressOrContactId);
+    Q_INVOKABLE QVariantMap salchatAcceptContact(const QString &label, const QString &messageId);
+    Q_INVOKABLE QVariantMap salchatRemoveContact(const QString &contactId);
+    Q_INVOKABLE QVariantMap salchatBlockContact(const QString &contactId, bool blocked);
+    Q_INVOKABLE QVariantList salchatContacts() const;
+    Q_INVOKABLE QVariantMap salchatSendMessage(const QString &contactId, const QString &message, quint64 ttl = 3600);
+    Q_INVOKABLE QVariantMap salchatReceiveMessages(quint64 limit = 100);
+    Q_INVOKABLE bool salchatSendMessageAsync(const QString &contactId, const QString &message, quint64 ttl = 3600);
+    Q_INVOKABLE bool salchatReceiveMessagesAsync(quint64 limit = 100);
+    Q_INVOKABLE QVariantList salchatMessages(const QString &contactId = QString(), quint64 limit = 100) const;
+    Q_INVOKABLE QVariantMap salchatGetMessage(const QString &messageId) const;
+    Q_INVOKABLE QVariantMap salchatDeleteMessage(const QString &messageId);
+    Q_INVOKABLE QVariantMap salchatStatus() const;
+    Q_INVOKABLE bool salchatStatusAsync();
+
     Q_INVOKABLE bool setUserNote(const QString &txid, const QString &note);
     Q_INVOKABLE QString getUserNote(const QString &txid) const;
     Q_INVOKABLE QString getTxKey(const QString &txid) const;
@@ -454,6 +475,10 @@ signals:
     void disconnectedChanged() const;
     void proxyAddressChanged() const;
     void refreshingChanged() const;
+
+    void salchatSendMessageFinished(const QVariantMap &result);
+    void salchatReceiveMessagesFinished(const QVariantMap &result);
+    void salchatStatusFinished(const QVariantMap &result);
 
     void assetTypesChanged();
     void isCarrotChanged();

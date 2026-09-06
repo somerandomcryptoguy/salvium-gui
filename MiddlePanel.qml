@@ -70,6 +70,7 @@ Rectangle {
     property Advanced advancedView: Advanced { }
     property Settings settingsView: Settings { }
     property AddressBook addressBookView: AddressBook { }
+    property Chat chatView: Chat { }
     property Keys keysView: Keys { }
     property Account accountView: Account { }
 
@@ -174,6 +175,10 @@ Rectangle {
                 name: "AddressBook"
                 PropertyChanges { target: root; currentView: addressBookView }
                 PropertyChanges { target: mainFlickable; contentHeight: addressBookView.addressbookHeight + 80 }
+            }, State {
+                name: "Chat"
+                PropertyChanges { target: root; currentView: chatView }
+                PropertyChanges { target: mainFlickable; contentHeight: chatView.chatHeight }
             }, State {
                 name: "Advanced"
                 PropertyChanges { target: root; currentView: advancedView }

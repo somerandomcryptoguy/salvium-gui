@@ -7,6 +7,7 @@ import "." as MoneroComponents
 Rectangle {
     id: root
     property alias text: content.text
+    property alias textFormat: content.textFormat
     property alias textColor: content.color
     property int fontSize: 15
 

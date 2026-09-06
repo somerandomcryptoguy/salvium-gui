@@ -1,9 +1,12 @@
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 
 ARG THREADS=1
 ARG QT_VERSION=v5.15.18-lts-lgpl
+ARG GCC_VERSION=16-20260322-1ubuntu1
 ARG DEBIAN_FRONTEND=noninteractive
 
+ENV CC="/usr/bin/gcc-16"
+ENV CXX="/usr/bin/g++-16"
 ENV CFLAGS="-fPIC"
 ENV CPPFLAGS="-fPIC"
 ENV CXXFLAGS="-fPIC"
@@ -11,10 +14,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV SOURCE_DATE_EPOCH=1397818193
 
 RUN apt update && \
+    apt install -y ca-certificates gnupg software-properties-common && \
+    apt install -y gcc-16=${GCC_VERSION} g++-16=${GCC_VERSION} && \
     apt install -y automake build-essential cmake autopoint bison gettext git gperf libgl1-mesa-dev libglib2.0-dev \
-    libpng-dev libpthread-stubs0-dev libsodium-dev libtool-bin libudev-dev libusb-1.0-0-dev mesa-common-dev \
-    pkg-config python2 perl wget xutils-dev libxext-dev libx11-xcb-dev && \
-    ln -sf /usr/bin/python2 /usr/local/bin/python
+    libpng-dev libpthread-stubs0-dev libreadline-dev libsodium-dev libtool libtool-bin libudev-dev libusb-1.0-0-dev mesa-common-dev \
+    pkg-config python3 perl wget xutils-dev libxext-dev libx11-xcb-dev && \
+    ln -sf /usr/bin/python3 /usr/local/bin/python && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-16 160 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-16 160 && \
+    gcc -dumpfullversion | grep -Eq '^16([.]|$)' && \
+    g++ -dumpfullversion | grep -Eq '^16([.]|$)'
 
 RUN git clone -b xorgproto-2020.1 --depth 1 https://gitlab.freedesktop.org/xorg/proto/xorgproto && \
     cd xorgproto && \
@@ -24,13 +33,13 @@ RUN git clone -b xorgproto-2020.1 --depth 1 https://gitlab.freedesktop.org/xorg/
     make -j$THREADS install && \
     rm -rf $(pwd)
 
-RUN git clone -b 1.12 --depth 1 https://gitlab.freedesktop.org/xorg/proto/xcbproto && \
+RUN git clone -b xcb-proto-1.17.0 --depth 1 https://gitlab.freedesktop.org/xorg/proto/xcbproto && \
     cd xcbproto && \
-    git reset --hard 6398e42131eedddde0d98759067dde933191f049 && \
+    git reset --hard 77d7fc04da729ddc5ed4aacf30253726fac24dca && \
     ./autogen.sh && \
     make -j$THREADS && \
     make -j$THREADS install && \
-    sed -i 's|${PYTHON_PREFIX}|/usr/local|g;s|${PYTHON_EXEC_PREFIX}|/usr/local|g' /usr/local/lib/pkgconfig/xcb-proto.pc && \
+    sed -i 's|${PYTHON_PREFIX}|/usr/local|g;s|${PYTHON_EXEC_PREFIX}|/usr/local|g' /usr/local/share/pkgconfig/xcb-proto.pc && \
     rm -rf $(pwd)
 
 RUN git clone -b libXau-1.0.9 --depth 1 https://gitlab.freedesktop.org/xorg/lib/libxau && \
@@ -41,9 +50,9 @@ RUN git clone -b libXau-1.0.9 --depth 1 https://gitlab.freedesktop.org/xorg/lib/
     make -j$THREADS install && \
     rm -rf $(pwd)
 
-RUN git clone -b 1.12 --depth 1 https://gitlab.freedesktop.org/xorg/lib/libxcb && \
+RUN git clone -b libxcb-1.17.0 --depth 1 https://gitlab.freedesktop.org/xorg/lib/libxcb && \
     cd libxcb && \
-    git reset --hard d34785a34f28fa6a00f8ce00d87e3132ff0f6467 && \
+    git reset --hard 622152ee42a310876f10602601206954b8d0613e && \
     ./autogen.sh --enable-shared --disable-static && \
     make -j$THREADS && \
     make -j$THREADS install && \
@@ -144,10 +153,11 @@ RUN wget https://github.com/libexpat/libexpat/releases/download/R_2_4_8/expat-2.
     make -j$THREADS install && \
     rm -rf $(pwd)
 
-RUN git clone -b 2.13.92 --depth 1 https://gitlab.freedesktop.org/fontconfig/fontconfig && \
+RUN git clone -b 2.16.2 --depth 1 https://gitlab.freedesktop.org/fontconfig/fontconfig && \
     cd fontconfig && \
-    git reset --hard b1df1101a643ae16cdfa1d83b939de2497b1bf27 && \
-    ./autogen.sh --disable-shared --enable-static --sysconfdir=/etc --localstatedir=/var && \
+    git reset --hard c1bdf4f542f56d3b5035ec2806ed7a685f831c1b && \
+    autoreconf -fi && \
+    ./configure --disable-shared --enable-static --sysconfdir=/etc --localstatedir=/var && \
     make -j$THREADS && \
     make -j$THREADS install && \
     rm -rf $(pwd)
@@ -208,20 +218,20 @@ RUN wget https://www.nlnetlabs.nl/downloads/unbound/unbound-${UNBOUND_VERSION}.t
 RUN rm /usr/lib/x86_64-linux-gnu/libX11.a && \
     rm /usr/lib/x86_64-linux-gnu/libXext.a && \
     rm /usr/lib/x86_64-linux-gnu/libX11-xcb.a && \
-    git clone git://code.qt.io/qt/qt5.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qt5.git -b ${QT_VERSION} --depth 1 && \
     cd qt5 && \
-    git clone git://code.qt.io/qt/qtbase.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtdeclarative.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtgraphicaleffects.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtimageformats.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtmultimedia.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtquickcontrols.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtquickcontrols2.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtsvg.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qttools.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qttranslations.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtx11extras.git -b ${QT_VERSION} --depth 1 && \
-    git clone git://code.qt.io/qt/qtxmlpatterns.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtbase.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtdeclarative.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtgraphicaleffects.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtimageformats.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtmultimedia.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtquickcontrols.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtquickcontrols2.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtsvg.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qttools.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qttranslations.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtx11extras.git -b ${QT_VERSION} --depth 1 && \
+    git clone https://code.qt.io/qt/qtxmlpatterns.git -b ${QT_VERSION} --depth 1 && \
     sed -ri s/\(Libs:.*\)/\\1\ -lexpat/ /usr/local/lib/pkgconfig/fontconfig.pc && \
     sed -ri s/\(Libs:.*\)/\\1\ -lz/ /usr/local/lib/pkgconfig/freetype2.pc && \
     sed -ri s/\(Libs:.*\)/\\1\ -lXau/ /usr/local/lib/pkgconfig/xcb.pc && \
@@ -266,12 +276,12 @@ RUN git clone -b v4.3.4 --depth 1 https://github.com/zeromq/libzmq && \
     cd libzmq && \
     git reset --hard 4097855ddaaa65ed7b5e8cb86d143842a594eebd && \
     ./autogen.sh && \
-    ./configure --disable-shared --enable-static --disable-libunwind --with-libsodium && \
+    ./configure --disable-shared --enable-static --disable-libunwind --disable-Werror --with-libsodium && \
     make -j$THREADS && \
     make -j$THREADS install && \
     rm -rf $(pwd)
 
-RUN git clone -b libgpg-error-1.45 --depth 1 git://git.gnupg.org/libgpg-error.git && \
+RUN git clone -b libgpg-error-1.45 --depth 1 https://github.com/gpg/libgpg-error.git && \
     cd libgpg-error && \
     git reset --hard dbac537e5e865fb6f3aa8596d213aa8c47a9dea1 && \
     ./autogen.sh && \
@@ -280,7 +290,7 @@ RUN git clone -b libgpg-error-1.45 --depth 1 git://git.gnupg.org/libgpg-error.gi
     make -j$THREADS install && \
     rm -rf $(pwd)
 
-RUN git clone -b libgcrypt-1.10.1 --depth 1 git://git.gnupg.org/libgcrypt.git && \
+RUN git clone -b libgcrypt-1.10.1 --depth 1 https://github.com/gpg/libgcrypt.git && \
     cd libgcrypt && \
     git reset --hard ae0e567820c37f9640440b3cff77d7c185aa6742 && \
     ./autogen.sh && \

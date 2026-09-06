@@ -160,6 +160,7 @@ ApplicationWindow {
         else if(seq === "Ctrl+R") middlePanel.state = "Receive"
         else if(seq === "Ctrl+H") middlePanel.state = "History"
         else if(seq === "Ctrl+B") middlePanel.state = "AddressBook"
+        else if(seq === "Ctrl+M") middlePanel.state = "Chat"
         else if(seq === "Ctrl+E") middlePanel.state = "Settings"
         else if(seq === "Ctrl+D") middlePanel.state = "Advanced"
         else if(seq === "Ctrl+T") middlePanel.state = "Account"
@@ -177,7 +178,8 @@ ApplicationWindow {
             if(middlePanel.state === "Settings") middlePanel.state = "Account"
             else if(middlePanel.state === "Account") middlePanel.state = "Transfer"
             else if(middlePanel.state === "Transfer") middlePanel.state = "AddressBook"
-            else if(middlePanel.state === "AddressBook") middlePanel.state = "Receive"
+            else if(middlePanel.state === "AddressBook") middlePanel.state = "Chat"
+            else if(middlePanel.state === "Chat") middlePanel.state = "Receive"
             else if(middlePanel.state === "Receive" && currentWallet.currentSubaddressAccount == 0) middlePanel.state = "Staking"
             else if(middlePanel.state === "Staking" && currentWallet.currentSubaddressAccount == 0) middlePanel.state = "Yield"
             else if(middlePanel.state === "Staking") middlePanel.state = "History"
@@ -201,7 +203,8 @@ ApplicationWindow {
             else if(middlePanel.state === "Yield" && currentWallet.currentSubaddressAccount == 0) middlePanel.state = "Staking"
             else if(middlePanel.state === "History") middlePanel.state = "Receive"
             else if(middlePanel.state === "Staking") middlePanel.state = "Receive"
-            else if(middlePanel.state === "Receive") middlePanel.state = "AddressBook"
+            else if(middlePanel.state === "Receive") middlePanel.state = "Chat"
+            else if(middlePanel.state === "Chat") middlePanel.state = "AddressBook"
             else if(middlePanel.state === "AddressBook") middlePanel.state = "Transfer"
             else if(middlePanel.state === "Transfer") middlePanel.state = "Account"
             else if(middlePanel.state === "Account") middlePanel.state = "Settings"
@@ -2112,6 +2115,11 @@ ApplicationWindow {
                     middlePanel.state = "AddressBook";
                     middlePanel.flickable.contentY = 0;
                     updateBalance();
+                }
+
+                onChatClicked: {
+                    middlePanel.state = "Chat";
+                    middlePanel.flickable.contentY = 0;
                 }
 
                 onAdvancedClicked: {

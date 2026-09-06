@@ -94,7 +94,7 @@ Do you speak a second language and would like to help translate the Salvium GUI?
    ```
    \* `<SALVIUM_GUI_DIR_FULL_PATH>` - absolute path to `salvium-gui` directory  
    \* `4` - number of CPU threads to use
-5. Salvium GUI Linux static binaries will be placed in  `salvium-gui/build/release/bin` directory
+5. The complete Salvium GUI/core static binary set will be placed in the `salvium-gui/build/release/bin` directory. This includes the GUI, daemon, wallet CLI/RPC, and blockchain utilities. Salchat is integrated into the wallet and has no standalone executable.
 6. (*Optional*) Compare `salvium-wallet-gui` SHA-256 hash to the one obtained from a trusted source
    ```
    docker run --rm -it -v <SALVIUM_GUI_DIR_FULL_PATH>:/salvium-gui -w /salvium-gui salvium:build-env-linux sh -c 'shasum -a 256 /salvium-gui/build/release/bin/salvium-wallet-gui'
@@ -214,7 +214,7 @@ The following instructions will fetch Qt from your distribution's repositories i
     \* `4` - number of CPU threads to use  
     \* Add `CMAKE_PREFIX_PATH` environment variable to set a custom Qt install directory, e.g. `CMAKE_PREFIX_PATH=$HOME/Qt/5.9.7/gcc_64 make release -j4`
 
-The executable can be found in the build/release/bin folder.
+The complete GUI/core binary set can be found in the `build/release/bin` folder.
 
 ### Building on OS X
 

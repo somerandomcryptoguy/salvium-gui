@@ -36,13 +36,45 @@ if(NOT MANUAL_SUBMODULES)
   if(GIT_FOUND)
     if(NOT DEV_MODE)
       function (check_submodule relative_path)
-        execute_process(COMMAND git rev-parse "HEAD" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${relative_path} OUTPUT_VARIABLE localHead)
-        execute_process(COMMAND git rev-parse "HEAD:${relative_path}" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} OUTPUT_VARIABLE checkedHead)
+        execute_process(
+          COMMAND git rev-parse "HEAD"
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${relative_path}
+          OUTPUT_VARIABLE localHead
+          OUTPUT_STRIP_TRAILING_WHITESPACE
+          RESULT_VARIABLE localHeadResult)
+        # Compare with the gitlink in the index. This accepts a deliberately
+        # staged submodule update before the outer commit is created, while an
+        # unstaged or otherwise mismatched checkout still fails the build.
+        execute_process(
+          COMMAND git rev-parse ":${relative_path}"
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          OUTPUT_VARIABLE checkedHead
+          OUTPUT_STRIP_TRAILING_WHITESPACE
+          RESULT_VARIABLE checkedHeadResult)
+        # A matching HEAD is insufficient if the build would consume modified
+        # or untracked source from inside the submodule. Ignored build output is
+        # excluded by git, while every source-visible difference is rejected.
+        execute_process(
+          # Validate source owned by the core repository here. Nested
+          # submodule revisions are validated by the core's own configure;
+          # asking the outer GUI checkout to inspect their worktrees causes
+          # false dirty reports on Windows (notably trezor-common).
+          COMMAND git status --porcelain --untracked-files=normal --ignore-submodules=dirty
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${relative_path}
+          OUTPUT_VARIABLE submoduleStatus
+          OUTPUT_STRIP_TRAILING_WHITESPACE
+          RESULT_VARIABLE submoduleStatusResult)
+        if(NOT localHeadResult EQUAL 0 OR NOT checkedHeadResult EQUAL 0 OR NOT submoduleStatusResult EQUAL 0)
+          message(FATAL_ERROR "Could not resolve submodule '${relative_path}' or its staged gitlink")
+        endif()
+        if(NOT "${submoduleStatus}" STREQUAL "")
+          message(FATAL_ERROR "Submodule '${relative_path}' contains modified or untracked core source. For a clean checkout, run 'git submodule sync --recursive' and 'git submodule update --init --recursive' from the GUI repository root. Preserve or commit intentional source edits before retrying.\n${submoduleStatus}")
+        endif()
         string(COMPARE EQUAL "${localHead}" "${checkedHead}" upToDate)
         if (upToDate)
           message(STATUS "Submodule '${relative_path}' is up-to-date")
         else()
-          message(FATAL_ERROR "Submodule '${relative_path}' is not using the checked head. Please update all submodules with\ngit submodule update --init --force --recursive\nor run cmake with -DMANUAL_SUBMODULES=1,\n or if you want to build from latest master run cmake with -DDEV_MODE=ON,\n or run make devmode")
+          message(FATAL_ERROR "Submodule '${relative_path}' is not using the checked head. Please preserve intentional source edits, then run\ngit submodule sync --recursive\ngit submodule update --init --recursive\nor run cmake with -DMANUAL_SUBMODULES=1,\n or if you want to build from latest master run cmake with -DDEV_MODE=ON,\n or run make devmode")
         endif()
       endfunction ()
       message(STATUS "Checking submodules")
@@ -59,7 +91,56 @@ if(NOT MANUAL_SUBMODULES)
   endif()
 endif()
 
+if(MINGW)
+  # The core always links mx25519_static, including in the shared GUI build.
+  # Its public headers therefore need the static ABI decoration as well.
+  add_compile_definitions(MX25519_STATIC)
+
+  if(STATIC)
+    # MSYS2's static Boost.Locale was compiled against ICU's DLL ABI. Select
+    # the matching import libraries before the core discovers Boost.
+    foreach(ICU_COMPONENT icuio icuin icuuc icudt icutu)
+      find_file(GUI_ICU_${ICU_COMPONENT}_IMPORT_LIBRARY
+        NAMES lib${ICU_COMPONENT}.dll.a
+        PATH_SUFFIXES lib
+        REQUIRED)
+    endforeach()
+    set(ICU_DATA_LIBRARY_RELEASE ${GUI_ICU_icudt_IMPORT_LIBRARY} CACHE FILEPATH "" FORCE)
+    set(ICU_I18N_LIBRARY_RELEASE ${GUI_ICU_icuin_IMPORT_LIBRARY} CACHE FILEPATH "" FORCE)
+    set(ICU_UC_LIBRARY_RELEASE ${GUI_ICU_icuuc_IMPORT_LIBRARY} CACHE FILEPATH "" FORCE)
+  endif()
+endif()
+
 add_subdirectory(salvium)
+
+if(MINGW)
+  # GCC 16 intermittently ICEs or spends hours optimizing these large targets.
+  # Keep the workaround local to the top-level Windows build configuration.
+  foreach(CORE_TARGET obj_rpc obj_wallet_api daemon)
+    if(TARGET ${CORE_TARGET})
+      target_compile_options(${CORE_TARGET} PRIVATE "$<$<CONFIG:Release>:-O1>")
+    endif()
+  endforeach()
+
+  if(STATIC)
+    # Replace the core's generic ICU names, which resolve to static archives
+    # under -static, with the import libraries required by Boost.Locale.
+    foreach(CORE_TARGET simplewallet wallet_api)
+      if(TARGET ${CORE_TARGET})
+        get_target_property(CORE_LINK_LIBRARIES ${CORE_TARGET} LINK_LIBRARIES)
+        list(REMOVE_ITEM CORE_LINK_LIBRARIES icuio icuin icuuc icudt icutu)
+        list(APPEND CORE_LINK_LIBRARIES
+          ${GUI_ICU_icuio_IMPORT_LIBRARY}
+          ${GUI_ICU_icuin_IMPORT_LIBRARY}
+          ${GUI_ICU_icuuc_IMPORT_LIBRARY}
+          ${GUI_ICU_icudt_IMPORT_LIBRARY}
+          ${GUI_ICU_icutu_IMPORT_LIBRARY})
+        set_property(TARGET ${CORE_TARGET} PROPERTY LINK_LIBRARIES ${CORE_LINK_LIBRARIES})
+      endif()
+    endforeach()
+  endif()
+endif()
+
 add_subdirectory(external)
 
 set(CMAKE_AUTOMOC ON)
@@ -204,6 +285,12 @@ if(QT5_PKG_CONFIG_FOUND)
   endif()
 
   set(QT5_LIBRARIES ${${QT5_PKG_CONFIG}_LIBRARIES} ${${QT5_PKG_CONFIG}_LDFLAGS_OTHER})
+  if(STATIC AND MINGW)
+    # MSYS2's static Qt 5 pkg-config files currently emit -l:libz and
+    # -l:libzstd, which name nonexistent files instead of libz.a/libzstd.a.
+    list(TRANSFORM QT5_LIBRARIES REPLACE "^:libz$" "z")
+    list(TRANSFORM QT5_LIBRARIES REPLACE "^:libzstd$" "zstd")
+  endif()
   include_directories(${${QT5_PKG_CONFIG}_INCLUDE_DIRS})
   link_directories(${${QT5_PKG_CONFIG}_LIBRARY_DIRS})
 endif()
@@ -218,25 +305,30 @@ list(APPEND QT5_LIBRARIES
 if(STATIC)
 
   set(QT5_PKG_CONFIG_Qt5Qml_PREFIX $ENV{QT5_PKG_CONFIG_Qt5Qml_PREFIX})
-    
-  set(QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/Qt/labs/folderlistmodel)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/Qt/labs/settings)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/Qt/labs/platform)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtGraphicalEffects)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtGraphicalEffects/private)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtMultimedia)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQml)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQml/Models.2)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick.2)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/Controls)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/Controls.2)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/Dialogs)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/Dialogs/Private)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/Layouts)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/PrivateWidgets)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/Templates.2)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/Window.2)
-  list(APPEND QT5_EXTRA_PATHS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml/QtQuick/XmlListModel)
+  set(QT5_QML_ROOT ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/qml)
+  if(EXISTS ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/share/qt5/qml)
+    set(QT5_QML_ROOT ${QT5_PKG_CONFIG_Qt5Qml_PREFIX}/share/qt5/qml)
+  endif()
+
+  set(QT5_EXTRA_PATHS ${QT5_QML_ROOT}/Qt/labs/folderlistmodel)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/Qt/labs/settings)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/Qt/labs/platform)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtGraphicalEffects)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtGraphicalEffects/private)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtMultimedia)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQml)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQml/Models.2)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQml/WorkerScript.2)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick.2)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/Controls)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/Controls.2)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/Dialogs)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/Dialogs/Private)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/Layouts)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/PrivateWidgets)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/Templates.2)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/Window.2)
+  list(APPEND QT5_EXTRA_PATHS ${QT5_QML_ROOT}/QtQuick/XmlListModel)
 
   message(STATUS "Using QT5_EXTRA_PATHS: '${QT5_EXTRA_PATHS}'")
     
@@ -271,6 +363,13 @@ if(STATIC)
     windowplugin
   )
 
+  if(MINGW)
+    list(APPEND QT5_EXTRA_LIBRARIES_LIST
+      Qt5QmlWorkerScript
+      workerscriptplugin
+    )
+  endif()
+
   if(NOT ${Qt5Core_VERSION} VERSION_LESS 5.14)
      list(APPEND QT5_EXTRA_LIBRARIES_LIST qmlplugin)
   endif()
@@ -291,6 +390,22 @@ if(STATIC)
     ${QT5_EXTRA_LIBRARIES}
     ${QT5_LIBRARIES}
   )
+
+  if(MINGW)
+    # The MSYS2 static Qt build enables the virtual-keyboard platform plugin,
+    # whose three QML plugins are not propagated by its CMake target.
+    foreach(LIBRARY
+        qtquickvirtualkeyboardplugin
+        qtquickvirtualkeyboardsettingsplugin
+        qtquickvirtualkeyboardstylesplugin)
+      find_library(${LIBRARY}_LIBRARY ${LIBRARY}
+        PATHS ${QT5_QML_ROOT}/QtQuick/VirtualKeyboard
+              ${QT5_QML_ROOT}/QtQuick/VirtualKeyboard/Settings
+              ${QT5_QML_ROOT}/QtQuick/VirtualKeyboard/Styles
+        REQUIRED)
+      list(APPEND QT5_LIBRARIES ${${LIBRARY}_LIBRARY})
+    endforeach()
+  endif()
 
   set(QT5_INTEGRATION_LIBRARIES_LIST
     Qt5EventDispatcherSupport

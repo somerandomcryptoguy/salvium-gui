@@ -40,6 +40,7 @@ Rectangle {
     signal advancedClicked()
     signal settingsClicked()
     signal addressBookClicked()
+    signal chatClicked()
     signal accountClicked()
     signal assetTypeChanged(string assetType)
 
@@ -74,6 +75,7 @@ Rectangle {
         case "Account": panel.accountClicked(); break;
         case "Send": panel.transferClicked(); break;
         case "AddressBook": panel.addressBookClicked(); break;
+        case "Chat": panel.chatClicked(); break;
         case "Receive": panel.receiveClicked(); break;
         case "Staking": panel.stakingClicked(); break;
         case "Yield": panel.yieldClicked(); break;
@@ -93,6 +95,7 @@ Rectangle {
         accountButton.checked = false
         sendButton.checked = false
         receiveButton.checked = false
+        chatButton.checked = false
         stakingButton.checked = false
         auditButton.checked = false
         createTokenButton.checked = false
@@ -135,6 +138,7 @@ Rectangle {
         else if (pos === "Send" || pos === "Transfer") selectButton(sendButton)
         else if (pos === "AddressBook") selectButton(addressBookButton)
         else if (pos === "Receive") selectButton(receiveButton)
+        else if (pos === "Chat") selectButton(chatButton)
         else if (pos === "Staking") selectButton(stakingButton)
         else if (pos === "Yield") selectButton(yieldButton)
         else if (pos === "CreateToken") selectButton(createTokenButton)
@@ -512,6 +516,17 @@ Rectangle {
                     }
 
                     MoneroComponents.MenuButtonDivider { visible: receiveButton.present; anchors.left: parent.left; anchors.right: parent.right; anchors.leftMargin: 20 }
+
+                    MoneroComponents.MenuButton {
+                        id: chatButton
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        text: qsTr("Salchat") + translationManager.emptyString
+                        symbol: (isMac ? "⌃" : qsTr("Ctrl+")) + "M" + translationManager.emptyString
+                        onClicked: { selectButton(chatButton); dispatchAction("Chat"); }
+                    }
+
+                    MoneroComponents.MenuButtonDivider { visible: chatButton.present; anchors.left: parent.left; anchors.right: parent.right; anchors.leftMargin: 20 }
 
                     MoneroComponents.MenuButton {
                         id: stakingButton
